@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garmin-mcp"
+version = "0.1.0"
+description = "MCP server to pull Garmin Connect metrics via garth and fastMCP"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "garth>=0.5.0",
+    "fastmcp>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+garmin-mcp = "garmin_mcp.server:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
