@@ -9,7 +9,7 @@ Author / MCP owner: see pyproject.toml and README.
 
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastmcp import FastMCP
 
@@ -325,7 +325,7 @@ def garmin_daily_body_battery_stress(day: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Activities & raw API
+# Activities
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
@@ -351,6 +351,89 @@ def garmin_activities(start: int = 0, limit: int = 20) -> str:
         activities = result if isinstance(result, list) else [result]
     return json.dumps(to_jsonable(activities), indent=2)
 
+
+@mcp.tool()
+def garmin_activity_details(activity_id: int | str) -> str:
+    """
+    Get full details for one activity by ID (running, cycling, strength, etc.).
+    Includes summary (distance, duration, HR, calories, cadence, etc.), splits, and metadata.
+    Use garmin_activities first to get activity_id values.
+    """
+    client = _ensure_client()
+    path = f"/activity-service/activity/{activity_id}"
+    try:
+        result = client.connectapi(path)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    if result is None:
+        return json.dumps({"message": "No activity found for this ID"})
+    return json.dumps(to_jsonable(result), indent=2)
+
+
+@mcp.tool()
+def garmin_activity_types() -> str:
+    """List all Garmin activity types (running, cycling, strength_training, etc.) with type IDs and keys."""
+    client = _ensure_client()
+    path = "/activity-service/activityTypes"
+    try:
+        result = client.connectapi(path)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    if result is None:
+        return json.dumps([])
+    return json.dumps(to_jsonable(result), indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Biomarkers & daily summary
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def garmin_daily_summary(day: str) -> str:
+    """
+    Get one-day wellness summary (biomarkers): RHR, min/max HR, stress, steps, distance,
+    calories, SpO2 (avg/low/high), respiration (avg/low/high), body battery (charged/max/min),
+    intensity minutes, floors, sleep summary. day: YYYY-MM-DD.
+    """
+    client = _ensure_client()
+    path = f"/usersummary-service/usersummary/daily/{client.username}"
+    params = {"calendarDate": day}
+    try:
+        result = client.connectapi(path, params=params)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    if result is None:
+        return json.dumps({"message": "No summary for this day"})
+    return json.dumps(to_jsonable(result), indent=2)
+
+
+@mcp.tool()
+def garmin_resting_heart_rate(end_date: str | None = None, days: int = 7) -> str:
+    """
+    Get resting heart rate (RHR) for one or more days. end_date: YYYY-MM-DD or omit for today.
+    Returns daily RHR and optional 7-day average. metricId 60 = resting heart rate.
+    """
+    client = _ensure_client()
+    end = date.today() if end_date is None else date.fromisoformat(end_date)
+    start = end - timedelta(days=days - 1)
+    path = f"/userstats-service/wellness/daily/{client.username}"
+    params = {
+        "fromDate": start.isoformat(),
+        "untilDate": end.isoformat(),
+        "metricId": "60",
+    }
+    try:
+        result = client.connectapi(path, params=params)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    if result is None:
+        return json.dumps({"message": "No RHR data for this range"})
+    return json.dumps(to_jsonable(result), indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Raw API
+# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) -> str:

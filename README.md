@@ -59,6 +59,11 @@ uv lock                    # refresh lock after changing pyproject.toml
 | `garmin_daily_body_battery_stress` | Body Battery + stress for a day |
 | **Activities** | |
 | `garmin_activities` | List activities (start, limit) |
+| `garmin_activity_details` | Full details for one activity by ID (running, strength, etc.) |
+| `garmin_activity_types` | List all activity types (type IDs and keys) |
+| **Biomarkers & summary** | |
+| `garmin_daily_summary` | One-day wellness: RHR, HR, stress, steps, SpO2, respiration, body battery, calories |
+| `garmin_resting_heart_rate` | Resting heart rate for a date range |
 | **Raw API** | |
 | `garmin_connect_api` | Call any Connect API path (GET/POST) |
 
