@@ -64,6 +64,8 @@ uv lock                    # refresh lock after changing pyproject.toml
 | **Biomarkers & summary** | |
 | `garmin_daily_summary` | One-day wellness: RHR, HR, stress, steps, SpO2, respiration, body battery, calories |
 | `garmin_resting_heart_rate` | Resting heart rate for a date range |
+| **Aggregate reports** | |
+| `garmin_summary_report` | Comprehensive biomarker + activity report (daily / weekly / biweekly / monthly) |
 | **Raw API** | |
 | `garmin_connect_api` | Call any Connect API path (GET/POST) |
 

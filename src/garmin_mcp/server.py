@@ -432,6 +432,215 @@ def garmin_resting_heart_rate(end_date: str | None = None, days: int = 7) -> str
 
 
 # ---------------------------------------------------------------------------
+# Aggregate summaries (daily / weekly / bi-weekly / monthly)
+# ---------------------------------------------------------------------------
+
+def _safe(fn, *args, **kwargs):
+    """Call fn and return result; on error return None."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        return None
+
+
+def _avg(values: list) -> float | None:
+    clean = [v for v in values if v is not None]
+    return round(sum(clean) / len(clean), 1) if clean else None
+
+
+def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
+    """
+    Collect biomarkers across an arbitrary date range and return a combined summary dict.
+    Pulls: daily wellness summaries, steps, stress, sleep, HRV, hydration,
+    intensity minutes, body battery, weight, and activities (including strength).
+    """
+    from garth import (
+        DailySteps, DailyStress, DailySleep, DailyHRV,
+        DailyHydration, DailyIntensityMinutes,
+        DailyBodyBatteryStress, WeightData,
+    )
+
+    num_days = (end_date - start_date).days + 1
+
+    # --- per-day wellness summaries (RHR, SpO2, respiration, calories) ---
+    daily_summaries = []
+    for i in range(num_days):
+        d = start_date + timedelta(days=i)
+        ds = _safe(
+            client.connectapi,
+            f"/usersummary-service/usersummary/daily/{client.username}",
+            params={"calendarDate": d.isoformat()},
+        )
+        if isinstance(ds, dict):
+            daily_summaries.append(ds)
+
+    rhr_vals = [s.get("restingHeartRate") for s in daily_summaries]
+    hr_min_vals = [s.get("minHeartRate") for s in daily_summaries]
+    hr_max_vals = [s.get("maxHeartRate") for s in daily_summaries]
+    spo2_avg_vals = [s.get("averageSpo2") for s in daily_summaries]
+    spo2_low_vals = [s.get("lowestSpo2") for s in daily_summaries]
+    resp_avg_vals = [s.get("avgWakingRespirationValue") for s in daily_summaries]
+    resp_low_vals = [s.get("lowestRespirationValue") for s in daily_summaries]
+    resp_high_vals = [s.get("highestRespirationValue") for s in daily_summaries]
+    cal_total = [s.get("totalKilocalories") for s in daily_summaries]
+    cal_active = [s.get("activeKilocalories") for s in daily_summaries]
+    stress_avg_vals = [s.get("averageStressLevel") for s in daily_summaries]
+    bb_high_vals = [s.get("bodyBatteryHighestValue") for s in daily_summaries]
+    bb_low_vals = [s.get("bodyBatteryLowestValue") for s in daily_summaries]
+
+    # --- garth Stats classes ---
+    steps = _safe(DailySteps.list, end=end_date, period=num_days, client=client) or []
+    stress = _safe(DailyStress.list, end=end_date, period=num_days, client=client) or []
+    sleep = _safe(DailySleep.list, end=end_date, period=num_days, client=client) or []
+    hrv = _safe(DailyHRV.list, end=end_date, period=min(num_days, 28), client=client) or []
+    hydration = _safe(DailyHydration.list, end=end_date, period=num_days, client=client) or []
+    intensity = _safe(DailyIntensityMinutes.list, end=end_date, period=num_days, client=client) or []
+    weights = _safe(WeightData.list, end=end_date, days=num_days, client=client) or []
+
+    total_steps = sum(s.total_steps for s in steps if s.total_steps)
+    total_distance_m = sum(s.total_distance for s in steps if s.total_distance)
+    sleep_scores = [s.value for s in sleep if s.value is not None]
+    hrv_avgs = [h.last_night_avg for h in hrv if h.last_night_avg is not None]
+    hydration_ml = [h.value_in_ml for h in hydration if h.value_in_ml is not None]
+    moderate_mins = sum(i.moderate_value or 0 for i in intensity)
+    vigorous_mins = sum(i.vigorous_value or 0 for i in intensity)
+
+    # --- activities (all types + strength breakdown) ---
+    activities_raw = _safe(
+        client.connectapi,
+        "/activitylist-service/activities/search/activities",
+        params={"start": "0", "limit": "200"},
+    )
+    activities_in_range = []
+    strength_activities = []
+    if isinstance(activities_raw, list):
+        for a in activities_raw:
+            a_start = a.get("startTimeLocal", "")
+            if isinstance(a_start, str) and a_start[:10] >= start_date.isoformat() and a_start[:10] <= end_date.isoformat():
+                activities_in_range.append(a)
+                a_type = (a.get("activityType", {}) or {}).get("typeKey", "")
+                if "strength" in a_type.lower():
+                    strength_activities.append(a)
+
+    # count by type
+    type_counts: dict[str, int] = {}
+    for a in activities_in_range:
+        t = (a.get("activityType", {}) or {}).get("typeKey", "unknown")
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+    strength_details = []
+    for sa in strength_activities:
+        strength_details.append({
+            "activity_id": sa.get("activityId"),
+            "name": sa.get("activityName"),
+            "date": (sa.get("startTimeLocal") or "")[:10],
+            "duration_min": round(sa.get("duration", 0) / 60, 1),
+            "calories": sa.get("calories"),
+            "avg_hr": sa.get("averageHR"),
+            "max_hr": sa.get("maxHR"),
+        })
+
+    weight_entries = [{"date": w.calendar_date.isoformat(), "weight_g": w.weight} for w in weights]
+
+    return {
+        "period": {"start": start_date.isoformat(), "end": end_date.isoformat(), "days": num_days},
+        "heart_rate": {
+            "resting_hr_avg": _avg(rhr_vals),
+            "hr_min": min((v for v in hr_min_vals if v), default=None),
+            "hr_max": max((v for v in hr_max_vals if v), default=None),
+        },
+        "hrv": {
+            "avg_nightly_hrv": _avg(hrv_avgs),
+            "min_nightly_hrv": min(hrv_avgs, default=None),
+            "max_nightly_hrv": max(hrv_avgs, default=None),
+        },
+        "stress": {
+            "avg_stress_level": _avg(stress_avg_vals),
+            "daily_stress_levels": [
+                {"date": s.calendar_date.isoformat(), "level": s.overall_stress_level}
+                for s in stress
+            ],
+        },
+        "sleep": {
+            "avg_sleep_score": _avg(sleep_scores),
+            "min_sleep_score": min(sleep_scores, default=None),
+            "max_sleep_score": max(sleep_scores, default=None),
+        },
+        "spo2": {
+            "avg_spo2": _avg(spo2_avg_vals),
+            "lowest_spo2": min((v for v in spo2_low_vals if v), default=None),
+        },
+        "respiration": {
+            "avg_waking_respiration": _avg(resp_avg_vals),
+            "lowest_respiration": min((v for v in resp_low_vals if v), default=None),
+            "highest_respiration": max((v for v in resp_high_vals if v), default=None),
+        },
+        "body_battery": {
+            "avg_highest": _avg(bb_high_vals),
+            "avg_lowest": _avg(bb_low_vals),
+        },
+        "steps": {
+            "total_steps": total_steps,
+            "avg_daily_steps": round(total_steps / num_days) if num_days else 0,
+            "total_distance_km": round(total_distance_m / 1000, 1) if total_distance_m else 0,
+        },
+        "hydration": {
+            "avg_daily_ml": _avg(hydration_ml),
+        },
+        "intensity_minutes": {
+            "total_moderate": moderate_mins,
+            "total_vigorous": vigorous_mins,
+            "total_combined": moderate_mins + vigorous_mins,
+        },
+        "calories": {
+            "avg_daily_total": _avg(cal_total),
+            "avg_daily_active": _avg(cal_active),
+        },
+        "weight": {
+            "entries": weight_entries,
+            "latest_weight_g": weight_entries[-1]["weight_g"] if weight_entries else None,
+        },
+        "activities": {
+            "total_count": len(activities_in_range),
+            "by_type": type_counts,
+            "total_duration_min": round(sum(a.get("duration", 0) for a in activities_in_range) / 60, 1),
+            "total_calories": round(sum(a.get("calories", 0) or 0 for a in activities_in_range)),
+        },
+        "strength_training": {
+            "session_count": len(strength_activities),
+            "sessions": strength_details,
+            "total_duration_min": round(sum(s["duration_min"] for s in strength_details), 1),
+            "total_calories": sum(s["calories"] or 0 for s in strength_details),
+        },
+    }
+
+
+@mcp.tool()
+def garmin_summary_report(
+    period: str = "weekly",
+    end_date: str | None = None,
+) -> str:
+    """
+    Generate a comprehensive summary of all essential biomarkers and activity stats.
+
+    period: "daily" (1 day), "weekly" (7 days), "biweekly" (14 days), or "monthly" (30 days).
+    end_date: YYYY-MM-DD (defaults to today).
+
+    Includes: RHR, HRV, stress, sleep score, SpO2, respiration, body battery, steps,
+    hydration, intensity minutes, calories, weight, activities breakdown, and
+    strength training sessions.
+    """
+    client = _ensure_client()
+    end = date.today() if end_date is None else date.fromisoformat(end_date)
+    period_days = {"daily": 1, "weekly": 7, "biweekly": 14, "monthly": 30}
+    days = period_days.get(period.lower(), 7)
+    start = end - timedelta(days=days - 1)
+    summary = _collect_period_summary(client, start, end)
+    summary["report_type"] = period.lower()
+    return json.dumps(summary, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Raw API
 # ---------------------------------------------------------------------------
 
