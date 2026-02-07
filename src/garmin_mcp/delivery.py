@@ -356,6 +356,8 @@ def register_delivery_tools(mcp_instance) -> None:
         all biomarkers: HR, HRV, stress, sleep, SpO2, respiration, body battery,
         steps, hydration, intensity minutes, calories, weight, activities, and
         strength training sessions.
+
+        FOCUS MORE ON STRENGTH AND CARDIO BIO-MARKERS IF POSSIBLE.
         """
         # -- import heavy helpers lazily to avoid circular imports --
         from .server import _collect_period_summary, _ensure_client
