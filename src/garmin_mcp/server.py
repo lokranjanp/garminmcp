@@ -1,6 +1,10 @@
 """
 Garmin MCP server: comprehensive tools to pull metrics from Garmin Connect via garth.
-Requires an authenticated session (login once, then resume_session or set GARTH_SESSION_PATH).
+
+Auth (in order): existing session tokens → resume from GARTH_SESSION_PATH / ~/.garth
+→ login using GARMIN_EMAIL and GARMIN_PASSWORD from MCP config "env".
+
+Author / MCP owner: see pyproject.toml and README.
 """
 
 import json
@@ -17,23 +21,47 @@ _client = None
 
 
 def _garth_client():
-    """Return garth client, resuming session from env or default path if needed."""
+    """
+    Return garth client, authenticating as needed. Priority:
+    1. Already have tokens (from a previous call in this process).
+    2. Resume session from GARTH_SESSION_PATH or ~/.garth if that directory exists.
+    3. Login using GARMIN_EMAIL and GARMIN_PASSWORD from env (e.g. MCP config.json "env").
+    """
     global garth, _client
     if garth is None:
         import garth as _g
         garth = _g
     if _client is None:
         _client = garth.client
-    # Resume session if we have a path and client has no tokens
-    if not _client.oauth1_token:
-        path = os.environ.get("GARTH_SESSION_PATH", os.path.expanduser("~/.garth"))
-        if os.path.isdir(path):
-            garth.resume(path)
+
+    if _client.oauth1_token:
+        return _client
+
+    session_path = os.environ.get("GARTH_SESSION_PATH", os.path.expanduser("~/.garth"))
+    if os.path.isdir(session_path):
+        try:
+            garth.resume(session_path)
+            if _client.oauth1_token:
+                return _client
+        except Exception:
+            pass
+
+    email = os.environ.get("GARMIN_EMAIL", "").strip()
+    password = os.environ.get("GARMIN_PASSWORD", "")
+    if email and password:
+        try:
+            garth.login(email, password)
+            os.makedirs(session_path, exist_ok=True)
+            garth.save(session_path)
+        except Exception:
+            raise
+        return _client
+
     return _client
 
 
 def _ensure_client():
-    """Ensure garth client is configured (resume from default path if possible)."""
+    """Ensure garth client is configured (session resume or GARMIN_EMAIL/GARMIN_PASSWORD from env)."""
     return _garth_client()
 
 
@@ -43,7 +71,10 @@ def _ensure_client():
 
 mcp = FastMCP(
     "Garmin Connect",
-    instructions="Pull metrics from Garmin Connect via the official API (garth). Login once, then use resume_session or set GARTH_SESSION_PATH.",
+    instructions=(
+        "Pull metrics from Garmin Connect via the official API (garth). "
+        "Auth: set GARTH_SESSION_PATH to resume a saved session, or set GARMIN_EMAIL and GARMIN_PASSWORD in MCP config env to log in automatically."
+    ),
 )
 
 

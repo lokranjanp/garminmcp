@@ -2,6 +2,8 @@
 
 An **MCP (Model Context Protocol) server** that exposes Garmin Connect data as tools using [fastMCP](https://github.com/jlowin/fastmcp) and [garth](https://github.com/matin/garth). It talks to the official Garmin Connect API (same as the mobile app) to pull metrics, activities, and wellness data.
 
+**Author / MCP owner:** [Lokranjan](https://github.com/lokranjanp) · [Repository](https://github.com/lokranjanp/garminmcp)
+
 ## Setup
 
 1. **Install dependencies** (from project root):
@@ -11,23 +13,10 @@ An **MCP (Model Context Protocol) server** that exposes Garmin Connect data as t
    # or: pip install -e ".[dev]"
    ```
 
-2. **Authenticate once** (interactive or via tools):
+2. **Authentication** (choose one):
 
-   - Run the server and use the `garmin_login` tool with your Garmin Connect email and password, **or**
-   - Log in from the command line and save the session:
-
-     ```bash
-     python -c "
-     import garth
-     garth.login('YOUR_EMAIL', 'YOUR_PASSWORD')
-     garth.save('~/.garth')
-     "
-     ```
-
-3. **Use the MCP** in Cursor or any MCP client:
-
-   - Either call `garmin_resume_session()` (or set `GARTH_SESSION_PATH`) so the server loads the saved session.
-   - Then call any of the Garmin tools (steps, sleep, stress, activities, etc.).
+   - **Recommended:** In your MCP `config.json`, pass **GARMIN_EMAIL** and **GARMIN_PASSWORD** in the server `env`. The server will log in automatically and save the session to `GARTH_SESSION_PATH` or `~/.garth` for next time.
+   - Or use a saved session: set **GARTH_SESSION_PATH** (or leave default `~/.garth`) and call `garmin_resume_session()` or log in once via the `garmin_login` tool / CLI and then resume.
 
 ## Running the server
 
@@ -41,6 +30,12 @@ An **MCP (Model Context Protocol) server** that exposes Garmin Connect data as t
 
   ```bash
   garmin-mcp
+  ```
+
+- **With env-based auth (e.g. from MCP config):**
+
+  ```bash
+  GARMIN_EMAIL=you@example.com GARMIN_PASSWORD=secret python -m garmin_mcp.server
   ```
 
 - **With a custom session path:**
@@ -89,7 +84,7 @@ Date parameters use `YYYY-MM-DD`; optional end dates default to “today” wher
 
 ## Cursor configuration
 
-Add the server to your MCP config (e.g. Cursor MCP settings or `~/.cursor/mcp.json`):
+Add the server to your MCP config (e.g. Cursor MCP settings or `~/.cursor/mcp.json`). Credentials can be provided via the `env` block so the server logs in automatically:
 
 ```json
 {
@@ -98,14 +93,18 @@ Add the server to your MCP config (e.g. Cursor MCP settings or `~/.cursor/mcp.js
       "command": "python",
       "args": ["-m", "garmin_mcp.server"],
       "env": {
-        "GARTH_SESSION_PATH": "/path/to/your/.garth"
+        "GARMIN_EMAIL": "your-garmin-connect-email@example.com",
+        "GARMIN_PASSWORD": "your-garmin-password"
       }
     }
   }
 }
 ```
 
-If you don’t set `GARTH_SESSION_PATH`, the server will try `~/.garth` when a tool needs the API.
+Optional env vars:
+
+- **GARMIN_EMAIL** / **GARMIN_PASSWORD** — used to log in if no session exists; session is then saved for next time.
+- **GARTH_SESSION_PATH** — directory to save/load session (default: `~/.garth`). If set and the folder exists, the server resumes that session before trying email/password.
 
 ## License
 
