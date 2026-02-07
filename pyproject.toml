@@ -15,8 +15,6 @@ maintainers = [
     { name = "Lokranjan" },
 ]
 license = { text = "MIT" }
-repository = "https://github.com/lokranjanp/garminmcp"
-homepage = "https://github.com/lokranjanp/garminmcp"
 keywords = ["mcp", "garmin", "garmin-connect", "garth", "fastmcp", "fitness"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -32,6 +30,10 @@ dependencies = [
     "garth>=0.5.0",
     "fastmcp>=2.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/lokranjanp/garminmcp"
+Repository = "https://github.com/lokranjanp/garminmcp"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
