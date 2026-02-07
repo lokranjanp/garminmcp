@@ -14,7 +14,12 @@ Use **full path** to `uvx` (e.g. `which uvx`). Example for Claude Desktop (`~/Li
       "args": ["--from", "git+https://github.com/lokranjanp/garminmcp", "garmin-mcp"],
       "env": {
         "GARMIN_EMAIL": "your-garmin-email@example.com",
-        "GARMIN_PASSWORD": "your-password"
+        "GARMIN_PASSWORD": "your-password",
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "587",
+        "SMTP_USER": "your-email@gmail.com",
+        "SMTP_PASSWORD": "your-app-password",
+        "SMTP_TO": "recipient@example.com"
       }
     }
   }
@@ -66,7 +71,21 @@ uv lock                    # refresh lock after changing pyproject.toml
 | `garmin_resting_heart_rate` | Resting heart rate for a date range |
 | **Aggregate reports** | |
 | `garmin_summary_report` | Comprehensive biomarker + activity report (daily / weekly / biweekly / monthly) |
+| **Delivery tools** | |
+| `garmin_email_summary` | Generate summary report and send via SMTP email (HTML + plain-text) |
 | **Raw API** | |
 | `garmin_connect_api` | Call any Connect API path (GET/POST) |
 
-Dates: use `YYYY-MM-DD`; omit end date for “today” where supported.
+Dates: use `YYYY-MM-DD`; omit end date for "today" where supported.
+
+## SMTP env vars (for delivery tools)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SMTP_HOST` | yes | SMTP server (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | no | Port, default `587` (STARTTLS) |
+| `SMTP_USER` | yes | Login username / email |
+| `SMTP_PASSWORD` | yes | Password or app-password |
+| `SMTP_FROM` | no | Sender address (defaults to `SMTP_USER`) |
+| `SMTP_TO` | no | Default recipient(s), comma-separated |
+| `SMTP_USE_SSL` | no | `"true"` for implicit SSL (port 465); default uses STARTTLS |
