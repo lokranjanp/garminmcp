@@ -9,10 +9,10 @@ description = "A personal MCP server to pull Garmin Connect metrics via garth an
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    { name = "Lokranjan", url = "https://github.com/lokranjanp" },
+    { name = "Lokranjan" },
 ]
 maintainers = [
-    { name = "Lokranjan", url = "https://github.com/lokranjanp" },
+    { name = "Lokranjan" },
 ]
 license = { text = "MIT" }
 repository = "https://github.com/lokranjanp/garminmcp"
