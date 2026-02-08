@@ -112,6 +112,19 @@ def authenticate():
 # Test definitions – each returns (label, data)
 # ---------------------------------------------------------------------------
 
+def _resolve_display_name(client) -> str:
+    """Get the Garmin Connect display name (NOT email) for connectapi paths."""
+    try:
+        from garth import UserProfile
+        profile = UserProfile.get(client=client)
+        name = getattr(profile, "display_name", None) or getattr(profile, "userName", None)
+        if name:
+            return name
+    except Exception:
+        pass
+    return client.username  # last resort
+
+
 def _tests(garth_mod, client):
     """Return an ordered dict of test_name -> (description, callable)."""
     from garth import (
@@ -124,6 +137,9 @@ def _tests(garth_mod, client):
         BodyBatteryData, DailyBodyBatteryStress,
     )
 
+    # Resolve display name up front so connectapi tests use it
+    display_name = _resolve_display_name(client)
+
     tests: dict[str, tuple[str, Any]] = {}
 
     # ── User ────────────────────────────────────────────────────────────
@@ -131,9 +147,17 @@ def _tests(garth_mod, client):
         "UserProfile.get()",
         lambda: UserProfile.get(client=client),
     )
+
+    def _user_settings():
+        """Try garth model first; fall back to raw connectapi on Pydantic errors."""
+        try:
+            return UserSettings.get(client=client)
+        except Exception:
+            return client.connectapi("/userprofile-service/usersettings")
+
     tests["user_settings"] = (
-        "UserSettings.get()",
-        lambda: UserSettings.get(client=client),
+        "UserSettings.get() (with raw-API fallback)",
+        _user_settings,
     )
 
     # ── Stats classes ───────────────────────────────────────────────────
@@ -200,8 +224,10 @@ def _tests(garth_mod, client):
         lambda: WeightData.list(days=7, client=client),
     )
     tests["body_battery_events"] = (
-        f"BodyBatteryData.get('{YESTERDAY}')",
-        lambda: BodyBatteryData.get(YESTERDAY, client=client),
+        f"connectapi bodyBattery/events ('{YESTERDAY}') [raw, avoids garth Pydantic bug]",
+        lambda: client.connectapi(
+            f"/wellness-service/wellness/bodyBattery/events/{YESTERDAY}",
+        ),
     )
     tests["daily_body_battery_stress"] = (
         f"DailyBodyBatteryStress.get('{YESTERDAY}')",
@@ -210,18 +236,18 @@ def _tests(garth_mod, client):
 
     # ── connectapi: wellness summary ────────────────────────────────────
     tests["daily_summary_api"] = (
-        f"connectapi usersummary/daily ('{YESTERDAY}')",
+        f"connectapi usersummary/daily ('{YESTERDAY}') [display_name={display_name}]",
         lambda: client.connectapi(
-            f"/usersummary-service/usersummary/daily/{client.username}",
+            f"/usersummary-service/usersummary/daily/{display_name}",
             params={"calendarDate": YESTERDAY},
         ),
     )
 
     # ── connectapi: resting heart rate ──────────────────────────────────
     tests["resting_hr_api"] = (
-        "connectapi userstats/wellness (RHR, 7d)",
+        f"connectapi userstats/wellness (RHR, 7d) [display_name={display_name}]",
         lambda: client.connectapi(
-            f"/userstats-service/wellness/daily/{client.username}",
+            f"/userstats-service/wellness/daily/{display_name}",
             params={
                 "fromDate": (date.today() - timedelta(days=6)).isoformat(),
                 "untilDate": TODAY,
@@ -239,8 +265,8 @@ def _tests(garth_mod, client):
         ),
     )
     tests["activity_types_api"] = (
-        "connectapi activity-service/activityTypes",
-        lambda: client.connectapi("/activity-service/activityTypes"),
+        "connectapi activity-service/activity/activityTypes",
+        lambda: client.connectapi("/activity-service/activity/activityTypes"),
     )
 
     # activity details – needs an activity ID from the list above, so we

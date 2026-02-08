@@ -65,6 +65,32 @@ def _ensure_client():
     return _garth_client()
 
 
+# Cache for the Garmin Connect display name (NOT the email).
+# Many /usersummary-service and /userstats-service endpoints need this in the URL path.
+_display_name: str | None = None
+
+def _get_display_name(client) -> str:
+    """
+    Return the Garmin Connect display name for the authenticated user.
+    Falls back to client.username if the profile lookup fails.
+    """
+    global _display_name
+    if _display_name is not None:
+        return _display_name
+    try:
+        from garth import UserProfile
+        profile = UserProfile.get(client=client)
+        name = getattr(profile, "display_name", None) or getattr(profile, "userName", None)
+        if name:
+            _display_name = name
+            return _display_name
+    except Exception:
+        pass
+    # Last resort – may be the email; will 403 on some endpoints
+    _display_name = client.username
+    return _display_name
+
+
 # ---------------------------------------------------------------------------
 # MCP app
 # ---------------------------------------------------------------------------
@@ -148,9 +174,19 @@ def garmin_user_profile() -> str:
 def garmin_user_settings() -> str:
     """Get the current user's Garmin Connect settings (units, preferences, etc.)."""
     client = _ensure_client()
-    from garth import UserSettings
-    settings = UserSettings.get(client=client)
-    return json.dumps(to_jsonable(settings), indent=2)
+    try:
+        from garth import UserSettings
+        settings = UserSettings.get(client=client)
+        return json.dumps(to_jsonable(settings), indent=2)
+    except Exception:
+        # garth's Pydantic model may fail validation when the API returns null
+        # for boolean fields (e.g. thresholdHeartRateAutoDetected). Fall back to
+        # the raw API response so the caller still gets data.
+        try:
+            raw = client.connectapi("/userprofile-service/usersettings")
+            return json.dumps(to_jsonable(raw), indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
 
 # ---------------------------------------------------------------------------
@@ -304,13 +340,21 @@ def garmin_weight_list(end_date: str | None = None, days: int = 30) -> str:
 
 @mcp.tool()
 def garmin_body_battery_events(day: str | None = None) -> str:
-    """Get Body Battery events for a day (legacy events, often sleep-only). day: YYYY-MM-DD or omit for today."""
+    """Get Body Battery events for a day (activity-linked drain, sleep charge, etc.). day: YYYY-MM-DD or omit for today."""
     client = _ensure_client()
-    from garth import BodyBatteryData
-    data = BodyBatteryData.get(day, client=client)
-    if not data:
+    target = day or date.today().isoformat()
+    # Use raw connectapi to avoid garth's BodyBatteryData Pydantic model which
+    # rejects activity_id as int (garth expects str, API returns int), silently
+    # dropping all activity-linked events (strength, running, etc.).
+    try:
+        raw = client.connectapi(
+            f"/wellness-service/wellness/bodyBattery/events/{target}",
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    if not raw:
         return json.dumps({"message": "No Body Battery events for this day"})
-    return json.dumps(to_jsonable(data), indent=2)
+    return json.dumps(to_jsonable(raw), indent=2)
 
 
 @mcp.tool()
@@ -374,7 +418,8 @@ def garmin_activity_details(activity_id: int | str) -> str:
 def garmin_activity_types() -> str:
     """List all Garmin activity types (running, cycling, strength_training, etc.) with type IDs and keys."""
     client = _ensure_client()
-    path = "/activity-service/activityTypes"
+    # Garmin moved this under /activity-service/activity/
+    path = "/activity-service/activity/activityTypes"
     try:
         result = client.connectapi(path)
     except Exception as e:
@@ -396,7 +441,8 @@ def garmin_daily_summary(day: str) -> str:
     intensity minutes, floors, sleep summary. day: YYYY-MM-DD.
     """
     client = _ensure_client()
-    path = f"/usersummary-service/usersummary/daily/{client.username}"
+    display = _get_display_name(client)
+    path = f"/usersummary-service/usersummary/daily/{display}"
     params = {"calendarDate": day}
     try:
         result = client.connectapi(path, params=params)
@@ -416,7 +462,8 @@ def garmin_resting_heart_rate(end_date: str | None = None, days: int = 7) -> str
     client = _ensure_client()
     end = date.today() if end_date is None else date.fromisoformat(end_date)
     start = end - timedelta(days=days - 1)
-    path = f"/userstats-service/wellness/daily/{client.username}"
+    display = _get_display_name(client)
+    path = f"/userstats-service/wellness/daily/{display}"
     params = {
         "fromDate": start.isoformat(),
         "untilDate": end.isoformat(),
@@ -468,7 +515,7 @@ def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
         d = start_date + timedelta(days=i)
         ds = _safe(
             client.connectapi,
-            f"/usersummary-service/usersummary/daily/{client.username}",
+            f"/usersummary-service/usersummary/daily/{_get_display_name(client)}",
             params={"calendarDate": d.isoformat()},
         )
         if isinstance(ds, dict):
