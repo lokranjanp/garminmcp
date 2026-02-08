@@ -91,9 +91,7 @@ def _get_display_name(client) -> str:
     return _display_name
 
 
-# ---------------------------------------------------------------------------
 # MCP app
-# ---------------------------------------------------------------------------
 
 mcp = FastMCP(
     "Garmin Connect",
@@ -104,9 +102,7 @@ mcp = FastMCP(
 )
 
 
-# ---------------------------------------------------------------------------
 # Date/time (no auth required)
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_current_datetime() -> str:
@@ -128,9 +124,7 @@ def garmin_current_datetime() -> str:
     }, indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Auth & session
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_login(email: str, password: str, session_path: str = "") -> str:
@@ -157,9 +151,7 @@ def garmin_resume_session(session_path: str = "") -> str:
     return json.dumps({"status": "ok", "message": f"Session resumed from {path}"})
 
 
-# ---------------------------------------------------------------------------
 # User
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_user_profile() -> str:
@@ -189,9 +181,7 @@ def garmin_user_settings() -> str:
             return json.dumps({"error": str(e)})
 
 
-# ---------------------------------------------------------------------------
 # Stats: steps, sleep, stress, hydration, intensity minutes, HRV
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_daily_steps(end_date: str | None = None, days: int = 7) -> str:
@@ -274,9 +264,7 @@ def garmin_daily_hrv(end_date: str | None = None, days: int = 28) -> str:
     return json.dumps(to_jsonable(data), indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Data: sleep, HRV, weight, body battery
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_sleep_data(day: str) -> str:
@@ -368,9 +356,7 @@ def garmin_daily_body_battery_stress(day: str | None = None) -> str:
     return json.dumps(to_jsonable(data), indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Activities
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_activities(start: int = 0, limit: int = 20) -> str:
@@ -429,9 +415,7 @@ def garmin_activity_types() -> str:
     return json.dumps(to_jsonable(result), indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Biomarkers & daily summary
-# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def garmin_daily_summary(day: str) -> str:
@@ -478,9 +462,7 @@ def garmin_resting_heart_rate(end_date: str | None = None, days: int = 7) -> str
     return json.dumps(to_jsonable(result), indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Aggregate summaries (daily / weekly / bi-weekly / monthly)
-# ---------------------------------------------------------------------------
 
 def _safe(fn, *args, **kwargs):
     """Call fn and return result; on error return None."""
@@ -552,7 +534,7 @@ def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
     moderate_mins = sum(i.moderate_value or 0 for i in intensity)
     vigorous_mins = sum(i.vigorous_value or 0 for i in intensity)
 
-    # --- activities (all types + strength breakdown) ---
+    # activities (all types + strength breakdown) ---
     activities_raw = _safe(
         client.connectapi,
         "/activitylist-service/activities/search/activities",
@@ -687,18 +669,13 @@ def garmin_summary_report(
     return json.dumps(summary, indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Delivery tools (email, etc.)
-# ---------------------------------------------------------------------------
-
 from .delivery import register_delivery_tools
 
 register_delivery_tools(mcp)
 
 
-# ---------------------------------------------------------------------------
-# Raw API
-# ---------------------------------------------------------------------------
+# Raw Garmin Connect API
 
 @mcp.tool()
 def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) -> str:
@@ -723,11 +700,10 @@ def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) 
     return json.dumps(to_jsonable(result), indent=2)
 
 
-# ---------------------------------------------------------------------------
 # Entrypoint
-# ---------------------------------------------------------------------------
 
 def run():
+    print("Starting Garmin MCP server...")
     mcp.run()
 
 

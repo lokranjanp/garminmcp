@@ -23,9 +23,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
-# ---------------------------------------------------------------------------
 # SMTP helpers
-# ---------------------------------------------------------------------------
 
 def _smtp_config() -> dict:
     """Read SMTP settings from env. Raises ValueError if essentials are missing."""
@@ -76,9 +74,7 @@ def _send_email(cfg: dict, to: str, subject: str, html_body: str, text_body: str
             smtp.sendmail(cfg["from"], [addr.strip() for addr in to.split(",")], msg.as_string())
 
 
-# ---------------------------------------------------------------------------
 # HTML / plain-text formatters
-# ---------------------------------------------------------------------------
 
 _PERIOD_LABELS = {"daily": "Daily", "weekly": "Weekly", "biweekly": "Bi-Weekly", "monthly": "Monthly"}
 
@@ -326,9 +322,7 @@ def _render_text(summary: dict) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
 # Tool registration
-# ---------------------------------------------------------------------------
 
 def register_delivery_tools(mcp_instance) -> None:
     """Register delivery-suite tools on the given FastMCP instance."""
