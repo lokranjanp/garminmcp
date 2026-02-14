@@ -73,6 +73,14 @@ uv lock                    # refresh lock after changing pyproject.toml
 | `garmin_summary_report` | Comprehensive biomarker + activity report (daily / weekly / biweekly / monthly) |
 | **Delivery tools** | |
 | `garmin_email_summary` | Generate summary report and send via SMTP email (HTML + plain-text) |
+| **Stats tools** | |
+| `garmin_stats_describe` | Descriptive stats: mean, median, mode, stdev, Q1/Q3, IQR, skewness, kurtosis |
+| `garmin_stats_percentiles` | Compute arbitrary percentiles (default: 5/10/25/50/75/90/95) |
+| `garmin_stats_correlation` | Pearson or Spearman correlation between two metric samples |
+| `garmin_stats_trend` | Linear trend: slope, R², direction, predicted next value |
+| `garmin_stats_compare` | Compare two samples: diff, % change, Cohen's d effect size |
+| `garmin_stats_moving_average` | Simple moving average with configurable window (default 7) |
+| `garmin_stats_outliers` | Outlier detection via IQR fences or z-score |
 | **Raw API** | |
 | `garmin_connect_api` | Call any Connect API path (GET/POST) |
 

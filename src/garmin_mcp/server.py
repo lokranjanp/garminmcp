@@ -14,6 +14,9 @@ from datetime import date, datetime, timedelta, timezone
 from fastmcp import FastMCP
 
 from .serializers import to_jsonable
+from typing import List
+import numpy as np
+import pandas as pd
 
 # Lazy garth import so we don't require auth at import time
 garth = None
@@ -700,6 +703,16 @@ def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) 
     return json.dumps(to_jsonable(result), indent=2)
 
 
+# ---------------------------------------------------------------------------
+# Stats tools (statistical analysis on metric samples)
+# ---------------------------------------------------------------------------
+
+from .stats import register_stats_tools
+
+register_stats_tools(mcp)
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 
 def run():
