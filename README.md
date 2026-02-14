@@ -11,7 +11,7 @@ Use **full path** to `uvx` (e.g. `which uvx`). Example for Claude Desktop (`~/Li
   "mcpServers": {
     "garmin": {
       "command": "/Users/YOUR_USER/.local/bin/uvx",
-      "args": ["--from", "git+https://github.com/lokranjanp/garminmcp", "garmin-mcp"],
+      "args": ["--refresh", "--from", "git+https://github.com/lokranjanp/garminmcp", "garmin-mcp"],
       "env": {
         "GARMIN_EMAIL": "your-garmin-email@example.com",
         "GARMIN_PASSWORD": "your-password",
