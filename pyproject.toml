@@ -30,6 +30,8 @@ dependencies = [
     "garth>=0.5.0",
     "fastmcp>=2.0.0",
     "numpy>=1.24",
+    "matplotlib>=3.7",
+    "lida>=0.0.14",
 ]
 
 [project.urls]

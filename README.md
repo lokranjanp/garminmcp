@@ -15,11 +15,16 @@ Use **full path** to `uvx` (e.g. `which uvx`). Example for Claude Desktop (`~/Li
       "env": {
         "GARMIN_EMAIL": "your-garmin-email@example.com",
         "GARMIN_PASSWORD": "your-password",
+
         "SMTP_HOST": "smtp.gmail.com",
         "SMTP_PORT": "587",
         "SMTP_USER": "your-email@gmail.com",
         "SMTP_PASSWORD": "your-app-password",
-        "SMTP_TO": "recipient@example.com"
+        "SMTP_TO": "recipient@example.com",
+
+        "LLM_API_BASE": "http://localhost:1234/v1",
+        "LLM_API_KEY": "lm-studio",
+        "LLM_MODEL": "your-loaded-model-name"
       }
     }
   }
@@ -81,6 +86,18 @@ uv lock                    # refresh lock after changing pyproject.toml
 | `garmin_stats_compare` | Compare two samples: diff, % change, Cohen's d effect size |
 | `garmin_stats_moving_average` | Simple moving average with configurable window (default 7) |
 | `garmin_stats_outliers` | Outlier detection via IQR fences or z-score |
+| **Visualizers (matplotlib)** | |
+| `garmin_viz_line` | Line chart (e.g. daily steps over time) |
+| `garmin_viz_bar` | Bar chart (e.g. activity type counts) |
+| `garmin_viz_scatter` | Scatter plot with trend line (e.g. steps vs sleep) |
+| `garmin_viz_histogram` | Histogram / distribution (e.g. HRV spread) |
+| `garmin_viz_pie` | Pie chart (e.g. activity type %) |
+| `garmin_viz_heatmap` | Heatmap from a 2-D matrix (e.g. weekly stress grid) |
+| `garmin_viz_multi_line` | Overlay multiple series on one chart |
+| **Visualizers (LIDA / AI)** | |
+| `garmin_lida_visualize` | AI-driven chart generation -- auto-picks the best chart type |
+| `garmin_lida_goals` | Suggest N visualization goals for a dataset (EDA) |
+| `garmin_lida_explain` | Explain a visualization's code in natural language |
 | **Raw API** | |
 | `garmin_connect_api` | Call any Connect API path (GET/POST) |
 
@@ -97,3 +114,14 @@ Dates: use `YYYY-MM-DD`; omit end date for "today" where supported.
 | `SMTP_FROM` | no | Sender address (defaults to `SMTP_USER`) |
 | `SMTP_TO` | no | Default recipient(s), comma-separated |
 | `SMTP_USE_SSL` | no | `"true"` for implicit SSL (port 465); default uses STARTTLS |
+
+## LLM env vars (for LIDA visualization tools)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `"openai"` | LLM provider for LIDA |
+| `LLM_API_BASE` | *(none)* | Custom endpoint -- set to `http://localhost:1234/v1` for LM Studio |
+| `LLM_API_KEY` | *(none)* | API key (use `"lm-studio"` for LM Studio) |
+| `LLM_MODEL` | `"gpt-4o-mini"` | Model name (for LM Studio: whatever model is loaded) |
+
+Visualization output is saved to `output/viz/` and also returned as base64 PNG in the JSON response.

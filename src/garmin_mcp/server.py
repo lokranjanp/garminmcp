@@ -10,11 +10,8 @@ Author / MCP owner: see pyproject.toml and README.
 import json
 import os
 from datetime import date, datetime, timedelta, timezone
-
 from fastmcp import FastMCP
-
 from .serializers import to_jsonable
-from typing import List
 
 # Lazy garth import so we don't require auth at import time
 garth = None
@@ -701,14 +698,33 @@ def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) 
     return json.dumps(to_jsonable(result), indent=2)
 
 
+
+# ---------------------------------------------------------------------------
+# Stats tools (statistical analysis on metric samples)
+# ---------------------------------------------------------------------------
+
 from .stats import register_stats_tools
 register_stats_tools(mcp)
 
+
+# ---------------------------------------------------------------------------
+# Visualization tools (matplotlib + LIDA)
+# ---------------------------------------------------------------------------
+
+from .visualizers import register_viz_tools
+register_viz_tools(mcp)
+
+from .lida_viz import register_lida_tools
+register_lida_tools(mcp)
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 
 def run():
     print("Starting Garmin MCP server...")
     mcp.run()
+
 
 if __name__ == "__main__":
     run()
