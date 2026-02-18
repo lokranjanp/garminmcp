@@ -58,7 +58,7 @@ def _safe_mode(vals: list[float]) -> float | str:
 def register_stats_tools(mcp_instance) -> None:
     """Register statistical-analysis tools on the given FastMCP instance."""
 
-    # ── 1. Descriptive statistics ──────────────────────────────────────
+    # Descriptive statistics
 
     @mcp_instance.tool()
     def garmin_stats_describe(values: list[float | None]) -> str:
@@ -107,7 +107,7 @@ def register_stats_tools(mcp_instance) -> None:
 
         return json.dumps(result, indent=2)
 
-    # ── 2. Percentiles ─────────────────────────────────────────────────
+    # Percentiles
 
     @mcp_instance.tool()
     def garmin_stats_percentiles(
@@ -134,7 +134,7 @@ def register_stats_tools(mcp_instance) -> None:
         result["count"] = len(clean)
         return json.dumps(result, indent=2)
 
-    # ── 3. Correlation ─────────────────────────────────────────────────
+    # Correlation
 
     @mcp_instance.tool()
     def garmin_stats_correlation(
@@ -196,7 +196,7 @@ def register_stats_tools(mcp_instance) -> None:
             "sample_size": len(pairs),
         }, indent=2)
 
-    # ── 4. Trend / linear regression ───────────────────────────────────
+    # Trend / linear regression
 
     @mcp_instance.tool()
     def garmin_stats_trend(
@@ -262,7 +262,7 @@ def register_stats_tools(mcp_instance) -> None:
 
         return json.dumps(result, indent=2)
 
-    # ── 5. Compare two samples ─────────────────────────────────────────
+    #  Compare two samples
 
     @mcp_instance.tool()
     def garmin_stats_compare(
@@ -331,7 +331,7 @@ def register_stats_tools(mcp_instance) -> None:
             "effect_size": effect,
         }, indent=2)
 
-    # ── 6. Moving average ──────────────────────────────────────────────
+    #  Moving average
 
     @mcp_instance.tool()
     def garmin_stats_moving_average(
@@ -392,7 +392,7 @@ def register_stats_tools(mcp_instance) -> None:
             "points": points,
         }, indent=2)
 
-    # ── 7. Outlier detection ───────────────────────────────────────────
+    #  Outlier detection
 
     @mcp_instance.tool()
     def garmin_stats_outliers(
