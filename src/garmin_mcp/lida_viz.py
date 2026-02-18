@@ -23,7 +23,7 @@ import tempfile
 import time
 from typing import Any
 
-from fastmcp.utilities.types import Image as MCPImage
+from mcp.types import ImageContent, TextContent
 
 
 # ---------------------------------------------------------------------------
@@ -207,8 +207,8 @@ def register_lida_tools(mcp_instance) -> None:
             "library": library,
         }
         return [
-            json.dumps(meta, indent=2),
-            MCPImage(path=filepath),
+            TextContent(type="text", text=json.dumps(meta, indent=2)),
+            ImageContent(type="image", data=raster_b64, mimeType="image/png"),
         ]
 
     @mcp_instance.tool()

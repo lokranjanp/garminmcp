@@ -10,6 +10,7 @@ Output directory: ``output/viz/`` or ``OUTPUT_DIR`` env var.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import time
@@ -20,21 +21,23 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from fastmcp.utilities.types import Image as MCPImage
+from mcp.types import ImageContent, TextContent
 
 
 _OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join("output", "viz"))
 
 
-def _save_fig(fig: plt.Figure, tag: str) -> str:
-    """Save *fig* to PNG on disk and return the absolute file path."""
+def _save_fig(fig: plt.Figure, tag: str) -> tuple[str, str]:
+    """Save *fig* to PNG on disk. Returns (abs_filepath, base64_png)."""
     os.makedirs(_OUTPUT_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     filename = f"{ts}_{tag}.png"
     filepath = os.path.join(_OUTPUT_DIR, filename)
     fig.savefig(filepath, format="png", bbox_inches="tight", dpi=150)
     plt.close(fig)
-    return os.path.abspath(filepath)
+    with open(filepath, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    return os.path.abspath(filepath), b64
 
 
 def _apply_style(ax: plt.Axes, title: str | None, x_label: str | None, y_label: str | None) -> None:
@@ -201,11 +204,11 @@ def register_viz_tools(mcp_instance) -> None:
                 _apply_style(ax, title, x_label, y_label)
             elif title:
                 ax.set_title(title, fontsize=13, fontweight="bold")
-            filepath = _save_fig(fig, ct)
+            filepath, b64 = _save_fig(fig, ct)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
 
         return [
-            json.dumps({"chart_type": ct, "file_path": filepath}),
-            MCPImage(path=filepath),
+            TextContent(type="text", text=json.dumps({"chart_type": ct, "file_path": filepath})),
+            ImageContent(type="image", data=b64, mimeType="image/png"),
         ]
