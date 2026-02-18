@@ -21,6 +21,7 @@ Use **full path** to `uvx` (e.g. `which uvx`). Example for Claude Desktop (`~/Li
         "SMTP_USER": "your-email@gmail.com",
         "SMTP_PASSWORD": "your-app-password",
         "SMTP_TO": "recipient@example.com",
+        "OUTPUT_DIR": "/Users/user.mac/garmin_data/",
 
         "LLM_API_BASE": "http://localhost:1234/v1",
         "LLM_API_KEY": "lm-studio",
