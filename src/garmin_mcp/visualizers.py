@@ -59,7 +59,8 @@ def _set_x_ticks(ax, x):
 # ---------------------------------------------------------------------------
 
 def _render_line(ax, x, y, **_kw):
-    ax.plot(range(len(y)), y, marker="o", linewidth=2, markersize=4)
+    y_clean = [v if v is not None else float("nan") for v in y]
+    ax.plot(range(len(y_clean)), y_clean, marker="o", linewidth=2, markersize=4)
     _set_x_ticks(ax, x)
 
 
@@ -83,7 +84,8 @@ def _render_scatter(ax, x, y, **_kw):
 
 def _render_histogram(ax, x, y, **kw):
     bins = kw.get("bins", 20)
-    ax.hist(y, bins=bins, edgecolor="white", alpha=0.8)
+    y_clean = [v for v in y if v is not None]
+    ax.hist(y_clean, bins=bins, edgecolor="white", alpha=0.8)
 
 
 def _render_pie(ax, x, y, **_kw):
@@ -114,7 +116,8 @@ def _render_multi_line(ax, x, y, **kw):
         raise ValueError("multi_line requires 'y_series' (list of y-value lists)")
     series_labels = kw.get("series_labels") or [f"Series {i+1}" for i in range(len(y_series))]
     for i, ys in enumerate(y_series):
-        ax.plot(range(len(ys)), ys, marker="o", linewidth=2, markersize=3, label=series_labels[i])
+        ys_clean = [v if v is not None else float("nan") for v in ys]
+        ax.plot(range(len(ys_clean)), ys_clean, marker="o", linewidth=2, markersize=3, label=series_labels[i])
     _set_x_ticks(ax, x)
     ax.legend()
 
@@ -140,14 +143,14 @@ def register_viz_tools(mcp_instance) -> None:
     def garmin_viz(
         chart_type: str,
         x: list[str | float] | None = None,
-        y: list[float] | None = None,
+        y: list[float | None] | None = None,
         title: str = "",
         x_label: str = "",
         y_label: str = "",
-        matrix: list[list[float]] | None = None,
+        matrix: list[list[float | None]] | None = None,
         x_labels: list[str] | None = None,
         y_labels: list[str] | None = None,
-        y_series: list[list[float]] | None = None,
+        y_series: list[list[float | None]] | None = None,
         series_labels: list[str] | None = None,
         bins: int = 20,
     ) -> list:
