@@ -1,10 +1,10 @@
 """
-Visualizer tools -- lightweight matplotlib-based charting for Garmin metric data.
+Visualizer tool -- single matplotlib-based charting endpoint for Garmin metric data.
 
-Each tool accepts plottable data directly, renders a chart, saves it to disk,
+Accepts a chart_type and plottable data, renders the chart, saves it to disk,
 and returns both the file path and a base64-encoded PNG in the JSON response.
 
-Output directory: ``output/viz/`` (auto-created).
+Output directory: ``output/viz/`` or ``OUTPUT_DIR`` env var.
 """
 
 from __future__ import annotations
@@ -17,20 +17,15 @@ import time
 from typing import Any
 
 import matplotlib
-matplotlib.use("Agg")  # headless backend -- no GUI required
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-# ---------------------------------------------------------------------------
-# Output helpers
-# ---------------------------------------------------------------------------
-
-_OUTPUT_DIR = os.path.join("output", "viz")
+_OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join("output", "viz"))
 
 
 def _save_and_encode(fig: plt.Figure, tag: str) -> dict[str, str]:
-    """Save *fig* to PNG and return ``{"file_path": ..., "base64_png": ...}``."""
     os.makedirs(_OUTPUT_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     filename = f"{ts}_{tag}.png"
@@ -56,200 +51,162 @@ def _apply_style(ax: plt.Axes, title: str | None, x_label: str | None, y_label: 
     ax.grid(True, alpha=0.3)
 
 
+def _set_x_ticks(ax, x):
+    if x:
+        step = max(1, len(x) // 12)
+        ax.set_xticks(range(0, len(x), step))
+        ax.set_xticklabels([str(v) for v in x[::step]], rotation=45, ha="right")
+
+
 # ---------------------------------------------------------------------------
-# Tool registration
+# Chart renderers (internal)
+# ---------------------------------------------------------------------------
+
+def _render_line(ax, x, y, **_kw):
+    ax.plot(range(len(y)), y, marker="o", linewidth=2, markersize=4)
+    _set_x_ticks(ax, x)
+
+
+def _render_bar(ax, x, y, **_kw):
+    labels = x or [str(i) for i in range(len(y))]
+    colors = plt.cm.tab10(np.linspace(0, 1, len(labels)))
+    ax.bar(range(len(labels)), y, color=colors)
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+
+
+def _render_scatter(ax, x, y, **_kw):
+    ax.scatter(x, y, alpha=0.7, edgecolors="white", linewidth=0.5)
+    if len(x) >= 3:
+        z = np.polyfit(x, y, 1)
+        p = np.poly1d(z)
+        x_sorted = sorted(x)
+        ax.plot(x_sorted, p(x_sorted), "--", color="red", alpha=0.6, label="trend")
+        ax.legend()
+
+
+def _render_histogram(ax, x, y, **kw):
+    bins = kw.get("bins", 20)
+    ax.hist(y, bins=bins, edgecolor="white", alpha=0.8)
+
+
+def _render_pie(ax, x, y, **_kw):
+    labels = x or [str(i) for i in range(len(y))]
+    ax.pie(labels[:len(y)], labels=labels[:len(y)], autopct="%1.1f%%", startangle=140, pctdistance=0.85)
+    # pie() uses labels param differently; pass values as first arg
+    ax.clear()
+    ax.pie(y, labels=labels[:len(y)], autopct="%1.1f%%", startangle=140, pctdistance=0.85)
+
+
+def _render_heatmap(fig, ax, x, y, **kw):
+    matrix = kw.get("matrix", [])
+    if not matrix:
+        raise ValueError("heatmap requires 'matrix' (a 2-D list of numbers)")
+    arr = np.array(matrix, dtype=float)
+    im = ax.imshow(arr, aspect="auto", cmap="YlOrRd")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    x_labels = kw.get("x_labels")
+    y_labels = kw.get("y_labels")
+    if x_labels:
+        ax.set_xticks(range(len(x_labels)))
+        ax.set_xticklabels(x_labels, rotation=45, ha="right")
+    if y_labels:
+        ax.set_yticks(range(len(y_labels)))
+        ax.set_yticklabels(y_labels)
+
+
+def _render_multi_line(ax, x, y, **kw):
+    y_series = kw.get("y_series", [])
+    if not y_series:
+        raise ValueError("multi_line requires 'y_series' (list of y-value lists)")
+    series_labels = kw.get("series_labels") or [f"Series {i+1}" for i in range(len(y_series))]
+    for i, ys in enumerate(y_series):
+        ax.plot(range(len(ys)), ys, marker="o", linewidth=2, markersize=3, label=series_labels[i])
+    _set_x_ticks(ax, x)
+    ax.legend()
+
+
+_RENDERERS = {
+    "line": _render_line,
+    "bar": _render_bar,
+    "scatter": _render_scatter,
+    "histogram": _render_histogram,
+    "pie": _render_pie,
+    "heatmap": _render_heatmap,
+    "multi_line": _render_multi_line,
+}
+
+
+# ---------------------------------------------------------------------------
+# Tool registration (single tool)
 # ---------------------------------------------------------------------------
 
 def register_viz_tools(mcp_instance) -> None:
-    """Register lightweight matplotlib visualization tools on the MCP instance."""
-
-    # ── 1. Line chart ──────────────────────────────────────────────────
 
     @mcp_instance.tool()
-    def garmin_viz_line(
-        x: list[str | float],
-        y: list[float],
-        title: str = "Line Chart",
+    def garmin_viz(
+        chart_type: str,
+        x: list[str | float] | None = None,
+        y: list[float] | None = None,
+        title: str = "",
         x_label: str = "",
         y_label: str = "",
-    ) -> str:
-        """
-        Render a line chart. x: category labels or numeric x-axis values,
-        y: numeric y-axis values.  Returns file_path + base64 PNG.
-
-        Example: plot daily step counts (x=dates, y=steps).
-        """
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(range(len(y)), y, marker="o", linewidth=2, markersize=4)
-        if x:
-            step = max(1, len(x) // 12)
-            ax.set_xticks(range(0, len(x), step))
-            ax.set_xticklabels([str(v) for v in x[::step]], rotation=45, ha="right")
-        _apply_style(ax, title, x_label, y_label)
-        result = _save_and_encode(fig, "line")
-        return json.dumps(result, indent=2)
-
-    # ── 2. Bar chart ───────────────────────────────────────────────────
-
-    @mcp_instance.tool()
-    def garmin_viz_bar(
-        labels: list[str],
-        values: list[float],
-        title: str = "Bar Chart",
-        x_label: str = "",
-        y_label: str = "",
-    ) -> str:
-        """
-        Render a vertical bar chart.  labels: category names, values: bar heights.
-        Returns file_path + base64 PNG.
-
-        Example: activity type breakdown (labels=types, values=counts).
-        """
-        fig, ax = plt.subplots(figsize=(10, 5))
-        colors = plt.cm.tab10(np.linspace(0, 1, len(labels)))
-        ax.bar(range(len(labels)), values, color=colors)
-        ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, rotation=45, ha="right")
-        _apply_style(ax, title, x_label, y_label)
-        result = _save_and_encode(fig, "bar")
-        return json.dumps(result, indent=2)
-
-    # ── 3. Scatter plot ────────────────────────────────────────────────
-
-    @mcp_instance.tool()
-    def garmin_viz_scatter(
-        x: list[float],
-        y: list[float],
-        title: str = "Scatter Plot",
-        x_label: str = "",
-        y_label: str = "",
-    ) -> str:
-        """
-        Render a scatter plot of two numeric variables.
-        Returns file_path + base64 PNG.
-
-        Example: correlate daily steps (x) with sleep score (y).
-        """
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(x, y, alpha=0.7, edgecolors="white", linewidth=0.5)
-        # trend line
-        if len(x) >= 3:
-            z = np.polyfit(x, y, 1)
-            p = np.poly1d(z)
-            x_sorted = sorted(x)
-            ax.plot(x_sorted, p(x_sorted), "--", color="red", alpha=0.6, label="trend")
-            ax.legend()
-        _apply_style(ax, title, x_label, y_label)
-        result = _save_and_encode(fig, "scatter")
-        return json.dumps(result, indent=2)
-
-    # ── 4. Histogram ───────────────────────────────────────────────────
-
-    @mcp_instance.tool()
-    def garmin_viz_histogram(
-        values: list[float],
-        bins: int = 20,
-        title: str = "Histogram",
-        x_label: str = "",
-    ) -> str:
-        """
-        Render a histogram (frequency distribution).
-        Returns file_path + base64 PNG.
-
-        Example: distribution of nightly HRV values.
-        """
-        fig, ax = plt.subplots(figsize=(9, 5))
-        ax.hist(values, bins=bins, edgecolor="white", alpha=0.8)
-        _apply_style(ax, title, x_label, "Frequency")
-        result = _save_and_encode(fig, "histogram")
-        return json.dumps(result, indent=2)
-
-    # ── 5. Pie chart ───────────────────────────────────────────────────
-
-    @mcp_instance.tool()
-    def garmin_viz_pie(
-        labels: list[str],
-        values: list[float],
-        title: str = "Pie Chart",
-    ) -> str:
-        """
-        Render a pie chart.  labels: slice names, values: slice sizes.
-        Returns file_path + base64 PNG.
-
-        Example: activity type distribution by duration.
-        """
-        fig, ax = plt.subplots(figsize=(7, 7))
-        ax.pie(
-            values,
-            labels=labels,
-            autopct="%1.1f%%",
-            startangle=140,
-            pctdistance=0.85,
-        )
-        if title:
-            ax.set_title(title, fontsize=13, fontweight="bold")
-        result = _save_and_encode(fig, "pie")
-        return json.dumps(result, indent=2)
-
-    # ── 6. Heatmap ─────────────────────────────────────────────────────
-
-    @mcp_instance.tool()
-    def garmin_viz_heatmap(
-        matrix: list[list[float]],
+        matrix: list[list[float]] | None = None,
         x_labels: list[str] | None = None,
         y_labels: list[str] | None = None,
-        title: str = "Heatmap",
-    ) -> str:
-        """
-        Render a heatmap from a 2-D matrix.
-        x_labels: column headers, y_labels: row headers.
-        Returns file_path + base64 PNG.
-
-        Example: weekly stress levels (rows=weeks, cols=days).
-        """
-        arr = np.array(matrix, dtype=float)
-        fig, ax = plt.subplots(figsize=(max(6, arr.shape[1] * 0.9), max(4, arr.shape[0] * 0.7)))
-        im = ax.imshow(arr, aspect="auto", cmap="YlOrRd")
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        if x_labels:
-            ax.set_xticks(range(len(x_labels)))
-            ax.set_xticklabels(x_labels, rotation=45, ha="right")
-        if y_labels:
-            ax.set_yticks(range(len(y_labels)))
-            ax.set_yticklabels(y_labels)
-        if title:
-            ax.set_title(title, fontsize=13, fontweight="bold")
-        result = _save_and_encode(fig, "heatmap")
-        return json.dumps(result, indent=2)
-
-    # ── 7. Multi-line chart ────────────────────────────────────────────
-
-    @mcp_instance.tool()
-    def garmin_viz_multi_line(
-        x: list[str | float],
-        y_series: list[list[float]],
+        y_series: list[list[float]] | None = None,
         series_labels: list[str] | None = None,
-        title: str = "Multi-Line Chart",
-        x_label: str = "",
-        y_label: str = "",
+        bins: int = 20,
     ) -> str:
         """
-        Overlay multiple line series on one chart.
-        x: shared x-axis values, y_series: list of y-value lists (one per line),
-        series_labels: legend names for each series.
-        Returns file_path + base64 PNG.
+        Render a chart and return file_path + base64 PNG.
 
-        Example: compare RHR, sleep score, and stress over the same date range.
+        chart_type: "line", "bar", "scatter", "histogram", "pie", "heatmap", or "multi_line".
+
+        Common params (used by most types):
+          x: x-axis values or labels.
+          y: y-axis values (for histogram, pass the data here).
+          title, x_label, y_label: chart labels.
+
+        Type-specific params:
+          histogram: bins (default 20).
+          heatmap: matrix (2-D list), x_labels, y_labels.
+          multi_line: y_series (list of y-value lists), series_labels.
+
+        Examples:
+          Line:     chart_type="line", x=["Mon","Tue",...], y=[8000,9200,...]
+          Bar:      chart_type="bar", x=["running","strength"], y=[5,3]
+          Scatter:  chart_type="scatter", x=[steps...], y=[sleep_scores...]
+          Histogram: chart_type="histogram", y=[hrv_values...]
+          Pie:      chart_type="pie", x=["running","cycling"], y=[120,80]
+          Heatmap:  chart_type="heatmap", matrix=[[...],[...]], x_labels=["Mon",...], y_labels=["Wk1",...]
+          Multi-line: chart_type="multi_line", x=[dates...], y_series=[[rhr...],[stress...]], series_labels=["RHR","Stress"]
         """
-        fig, ax = plt.subplots(figsize=(10, 5))
-        labels = series_labels or [f"Series {i+1}" for i in range(len(y_series))]
-        for i, ys in enumerate(y_series):
-            ax.plot(range(len(ys)), ys, marker="o", linewidth=2, markersize=3, label=labels[i])
-        if x:
-            step = max(1, len(x) // 12)
-            ax.set_xticks(range(0, len(x), step))
-            ax.set_xticklabels([str(v) for v in x[::step]], rotation=45, ha="right")
-        ax.legend()
-        _apply_style(ax, title, x_label, y_label)
-        result = _save_and_encode(fig, "multi_line")
+        ct = chart_type.lower().strip()
+        if ct not in _RENDERERS:
+            return json.dumps({"error": f"Unknown chart_type '{chart_type}'. Use: {', '.join(_RENDERERS)}"})
+
+        x = x or []
+        y = y or []
+        kw: dict[str, Any] = {
+            "matrix": matrix, "x_labels": x_labels, "y_labels": y_labels,
+            "y_series": y_series, "series_labels": series_labels, "bins": bins,
+        }
+
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            renderer = _RENDERERS[ct]
+            if ct == "heatmap":
+                renderer(fig, ax, x, y, **kw)
+            else:
+                renderer(ax, x, y, **kw)
+            if ct != "pie":
+                _apply_style(ax, title, x_label, y_label)
+            elif title:
+                ax.set_title(title, fontsize=13, fontweight="bold")
+            result = _save_and_encode(fig, ct)
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+        result["chart_type"] = ct
         return json.dumps(result, indent=2)

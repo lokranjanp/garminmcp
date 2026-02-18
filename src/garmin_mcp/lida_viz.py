@@ -29,7 +29,7 @@ from typing import Any
 # Output helpers (shared with visualizers.py conventions)
 # ---------------------------------------------------------------------------
 
-_OUTPUT_DIR = os.path.join("output", "viz")
+_OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join("output", "viz"))
 
 
 def _save_chart_b64(raster_b64: str, tag: str) -> dict[str, str]:

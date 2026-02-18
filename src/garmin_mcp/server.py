@@ -13,7 +13,6 @@ from datetime import date, datetime, timedelta, timezone
 from fastmcp import FastMCP
 from .serializers import to_jsonable
 
-# Lazy garth import so we don't require auth at import time
 garth = None
 _client = None
 
@@ -59,19 +58,12 @@ def _garth_client():
 
 
 def _ensure_client():
-    """Ensure garth client is configured (session resume or GARMIN_EMAIL/GARMIN_PASSWORD from env)."""
     return _garth_client()
 
 
-# Cache for the Garmin Connect display name (NOT the email).
-# Many /usersummary-service and /userstats-service endpoints need this in the URL path.
 _display_name: str | None = None
 
 def _get_display_name(client) -> str:
-    """
-    Return the Garmin Connect display name for the authenticated user.
-    Falls back to client.username if the profile lookup fails.
-    """
     global _display_name
     if _display_name is not None:
         return _display_name
@@ -84,23 +76,23 @@ def _get_display_name(client) -> str:
             return _display_name
     except Exception:
         pass
-    # Last resort – may be the email; will 403 on some endpoints
     _display_name = client.username
     return _display_name
 
-
-# MCP app
 
 mcp = FastMCP(
     "Garmin Connect",
     instructions=(
         "Pull metrics from Garmin Connect via the official API (garth). "
-        "Auth: set GARTH_SESSION_PATH to resume a saved session, or set GARMIN_EMAIL and GARMIN_PASSWORD in MCP config env to log in automatically."
+        "Auth: set GARTH_SESSION_PATH to resume a saved session, or set "
+        "GARMIN_EMAIL and GARMIN_PASSWORD in MCP config env to log in automatically."
     ),
 )
 
 
-# Date/time (no auth required)
+# ═══════════════════════════════════════════════════════════════════════════
+# 1. Date/time (no auth required)
+# ═══════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def garmin_current_datetime() -> str:
@@ -122,7 +114,9 @@ def garmin_current_datetime() -> str:
     }, indent=2)
 
 
-# Auth & session
+# ═══════════════════════════════════════════════════════════════════════════
+# 2. Auth & session
+# ═══════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def garmin_login(email: str, password: str, session_path: str = "") -> str:
@@ -149,7 +143,9 @@ def garmin_resume_session(session_path: str = "") -> str:
     return json.dumps({"status": "ok", "message": f"Session resumed from {path}"})
 
 
-# User
+# ═══════════════════════════════════════════════════════════════════════════
+# 3. User profile / settings
+# ═══════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def garmin_user_profile() -> str:
@@ -169,9 +165,6 @@ def garmin_user_settings() -> str:
         settings = UserSettings.get(client=client)
         return json.dumps(to_jsonable(settings), indent=2)
     except Exception:
-        # garth's Pydantic model may fail validation when the API returns null
-        # for boolean fields (e.g. thresholdHeartRateAutoDetected). Fall back to
-        # the raw API response so the caller still gets data.
         try:
             raw = client.connectapi("/userprofile-service/usersettings")
             return json.dumps(to_jsonable(raw), indent=2)
@@ -179,182 +172,139 @@ def garmin_user_settings() -> str:
             return json.dumps({"error": str(e)})
 
 
-# Stats: steps, sleep, stress, hydration, intensity minutes, HRV
+# ═══════════════════════════════════════════════════════════════════════════
+# 4. garmin_metric – consolidated daily/weekly stats (replaces 9 tools)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_METRIC_MAP = {
+    ("steps", "daily"): ("garth.DailySteps", "list"),
+    ("steps", "weekly"): ("garth.WeeklySteps", "list"),
+    ("sleep", "daily"): ("garth.DailySleep", "list"),
+    ("stress", "daily"): ("garth.DailyStress", "list"),
+    ("stress", "weekly"): ("garth.WeeklyStress", "list"),
+    ("hydration", "daily"): ("garth.DailyHydration", "list"),
+    ("intensity_minutes", "daily"): ("garth.DailyIntensityMinutes", "list"),
+    ("intensity_minutes", "weekly"): ("garth.WeeklyIntensityMinutes", "list"),
+    ("hrv", "daily"): ("garth.DailyHRV", "list"),
+}
+
+
+def _resolve_garth_class(dotted: str):
+    """Resolve 'garth.ClassName' to the actual class object."""
+    import garth as _g
+    _, cls_name = dotted.split(".", 1)
+    return getattr(_g, cls_name)
+
 
 @mcp.tool()
-def garmin_daily_steps(end_date: str | None = None, days: int = 7) -> str:
-    """Get daily steps (and distance, step goal) for the last N days. end_date: YYYY-MM-DD or omit for today."""
+def garmin_metric(
+    metric: str,
+    period: str = "daily",
+    end_date: str | None = None,
+    count: int = 7,
+) -> str:
+    """
+    Fetch daily or weekly stat series from Garmin Connect.
+
+    metric: "steps", "sleep", "stress", "hydration", "intensity_minutes", or "hrv".
+    period: "daily" (default) or "weekly".
+    end_date: YYYY-MM-DD (defaults to today/this week).
+    count: number of days or weeks to fetch (default 7).
+
+    Examples:
+      garmin_metric(metric="steps", period="daily", count=14)
+      garmin_metric(metric="stress", period="weekly", count=4)
+      garmin_metric(metric="hrv", count=28)
+    """
+    key = (metric.lower().strip(), period.lower().strip())
+    if key not in _METRIC_MAP:
+        valid = sorted({f"{m}/{p}" for m, p in _METRIC_MAP})
+        return json.dumps({"error": f"Unknown metric/period '{metric}/{period}'. Valid: {valid}"})
+
     client = _ensure_client()
-    from garth import DailySteps
-    data = DailySteps.list(end=end_date, period=days, client=client)
+    cls_path, method = _METRIC_MAP[key]
+    cls = _resolve_garth_class(cls_path)
+    data = getattr(cls, method)(end=end_date, period=count, client=client)
     return json.dumps(to_jsonable(data), indent=2)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 5. garmin_data – consolidated detailed data (replaces 8 tools)
+# ═══════════════════════════════════════════════════════════════════════════
+
 @mcp.tool()
-def garmin_weekly_steps(end_date: str | None = None, weeks: int = 4) -> str:
-    """Get weekly steps summary for the last N weeks. end_date: YYYY-MM-DD or omit for this week."""
+def garmin_data(
+    data_type: str,
+    day: str | None = None,
+    end_date: str | None = None,
+    days: int = 7,
+) -> str:
+    """
+    Fetch detailed health data from Garmin Connect.
+
+    data_type: "sleep", "hrv", "weight", "body_battery_events", or "body_battery_stress".
+    day: YYYY-MM-DD for single-day data. If omitted, fetches a list.
+    end_date: YYYY-MM-DD end of range for list mode (defaults to today).
+    days: number of days for list mode (default 7; up to 30 for weight).
+
+    When day is provided: returns detailed data for that single day.
+    When day is omitted: returns a list of entries over the date range.
+
+    Note: body_battery_events and body_battery_stress only support single-day mode (day param).
+
+    Examples:
+      garmin_data(data_type="sleep", day="2026-02-01")         # single day
+      garmin_data(data_type="sleep", days=14)                   # last 14 days
+      garmin_data(data_type="weight", end_date="2026-02-01", days=30)
+      garmin_data(data_type="body_battery_events", day="2026-02-01")
+    """
+    dt = data_type.lower().strip()
     client = _ensure_client()
-    from garth import WeeklySteps
-    data = WeeklySteps.list(end=end_date, period=weeks, client=client)
+
+    if dt == "body_battery_events":
+        target = day or date.today().isoformat()
+        try:
+            raw = client.connectapi(f"/wellness-service/wellness/bodyBattery/events/{target}")
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+        if not raw:
+            return json.dumps({"message": "No Body Battery events for this day"})
+        return json.dumps(to_jsonable(raw), indent=2)
+
+    if dt == "body_battery_stress":
+        from garth import DailyBodyBatteryStress
+        data = DailyBodyBatteryStress.get(day, client=client)
+        if data is None:
+            return json.dumps({"message": "No Body Battery/stress data for this day"})
+        return json.dumps(to_jsonable(data), indent=2)
+
+    garth_classes = {
+        "sleep": "SleepData",
+        "hrv": "HRVData",
+        "weight": "WeightData",
+    }
+    if dt not in garth_classes:
+        return json.dumps({
+            "error": f"Unknown data_type '{data_type}'. "
+                     f"Valid: sleep, hrv, weight, body_battery_events, body_battery_stress"
+        })
+
+    import garth as _g
+    cls = getattr(_g, garth_classes[dt])
+
+    if day:
+        data = cls.get(day, client=client)
+        if data is None:
+            return json.dumps({"message": f"No {dt} data for {day}"})
+        return json.dumps(to_jsonable(data), indent=2)
+
+    data = cls.list(end=end_date, days=days, client=client)
     return json.dumps(to_jsonable(data), indent=2)
 
 
-@mcp.tool()
-def garmin_daily_sleep_stats(end_date: str | None = None, days: int = 7) -> str:
-    """Get daily sleep score/values for the last N days (summary stats, not full sleep data)."""
-    client = _ensure_client()
-    from garth import DailySleep
-    data = DailySleep.list(end=end_date, period=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_daily_stress(end_date: str | None = None, days: int = 7) -> str:
-    """Get daily stress (overall level and durations by level) for the last N days."""
-    client = _ensure_client()
-    from garth import DailyStress
-    data = DailyStress.list(end=end_date, period=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_weekly_stress(end_date: str | None = None, weeks: int = 4) -> str:
-    """Get weekly stress summary for the last N weeks."""
-    client = _ensure_client()
-    from garth import WeeklyStress
-    data = WeeklyStress.list(end=end_date, period=weeks, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_daily_hydration(end_date: str | None = None, days: int = 7) -> str:
-    """Get daily hydration (value and goal in ml) for the last N days."""
-    client = _ensure_client()
-    from garth import DailyHydration
-    data = DailyHydration.list(end=end_date, period=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_daily_intensity_minutes(end_date: str | None = None, days: int = 7) -> str:
-    """Get daily intensity minutes (moderate/vigorous and weekly goal) for the last N days."""
-    client = _ensure_client()
-    from garth import DailyIntensityMinutes
-    data = DailyIntensityMinutes.list(end=end_date, period=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_weekly_intensity_minutes(end_date: str | None = None, weeks: int = 4) -> str:
-    """Get weekly intensity minutes for the last N weeks."""
-    client = _ensure_client()
-    from garth import WeeklyIntensityMinutes
-    data = WeeklyIntensityMinutes.list(end=end_date, period=weeks, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_daily_hrv(end_date: str | None = None, days: int = 28) -> str:
-    """Get daily HRV (heart rate variability) summary for the last N days."""
-    client = _ensure_client()
-    from garth import DailyHRV
-    data = DailyHRV.list(end=end_date, period=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-# Data: sleep, HRV, weight, body battery
-
-@mcp.tool()
-def garmin_sleep_data(day: str) -> str:
-    """Get full sleep data for a single day (sleep stages, movement, scores). day: YYYY-MM-DD."""
-    client = _ensure_client()
-    from garth import SleepData
-    data = SleepData.get(day, client=client)
-    if data is None:
-        return json.dumps({"message": "No sleep data for this day"})
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_sleep_data_list(end_date: str | None = None, days: int = 7) -> str:
-    """List full sleep data for the last N days. end_date: YYYY-MM-DD or omit for today."""
-    client = _ensure_client()
-    from garth import SleepData
-    data = SleepData.list(end=end_date, days=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_hrv_data(day: str) -> str:
-    """Get full HRV data for a single day (readings, baseline, summary). day: YYYY-MM-DD."""
-    client = _ensure_client()
-    from garth import HRVData
-    data = HRVData.get(day, client=client)
-    if data is None:
-        return json.dumps({"message": "No HRV data for this day"})
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_hrv_data_list(end_date: str | None = None, days: int = 7) -> str:
-    """List full HRV data for the last N days."""
-    client = _ensure_client()
-    from garth import HRVData
-    data = HRVData.list(end=end_date, days=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_weight(day: str) -> str:
-    """Get weight (and optional body composition) for a single day. day: YYYY-MM-DD."""
-    client = _ensure_client()
-    from garth import WeightData
-    data = WeightData.get(day, client=client)
-    if data is None:
-        return json.dumps({"message": "No weight data for this day"})
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_weight_list(end_date: str | None = None, days: int = 30) -> str:
-    """List weight entries for the last N days."""
-    client = _ensure_client()
-    from garth import WeightData
-    data = WeightData.list(end=end_date, days=days, client=client)
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-@mcp.tool()
-def garmin_body_battery_events(day: str | None = None) -> str:
-    """Get Body Battery events for a day (activity-linked drain, sleep charge, etc.). day: YYYY-MM-DD or omit for today."""
-    client = _ensure_client()
-    target = day or date.today().isoformat()
-    # Use raw connectapi to avoid garth's BodyBatteryData Pydantic model which
-    # rejects activity_id as int (garth expects str, API returns int), silently
-    # dropping all activity-linked events (strength, running, etc.).
-    try:
-        raw = client.connectapi(
-            f"/wellness-service/wellness/bodyBattery/events/{target}",
-        )
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-    if not raw:
-        return json.dumps({"message": "No Body Battery events for this day"})
-    return json.dumps(to_jsonable(raw), indent=2)
-
-
-@mcp.tool()
-def garmin_daily_body_battery_stress(day: str | None = None) -> str:
-    """Get full daily Body Battery and stress data for a day (values over time). day: YYYY-MM-DD or omit for today."""
-    client = _ensure_client()
-    from garth import DailyBodyBatteryStress
-    data = DailyBodyBatteryStress.get(day, client=client)
-    if data is None:
-        return json.dumps({"message": "No Body Battery/stress data for this day"})
-    return json.dumps(to_jsonable(data), indent=2)
-
-
-# Activities
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Activities
+# ═══════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def garmin_activities(start: int = 0, limit: int = 20) -> str:
@@ -402,7 +352,6 @@ def garmin_activity_details(activity_id: int | str) -> str:
 def garmin_activity_types() -> str:
     """List all Garmin activity types (running, cycling, strength_training, etc.) with type IDs and keys."""
     client = _ensure_client()
-    # Garmin moved this under /activity-service/activity/
     path = "/activity-service/activity/activityTypes"
     try:
         result = client.connectapi(path)
@@ -413,7 +362,9 @@ def garmin_activity_types() -> str:
     return json.dumps(to_jsonable(result), indent=2)
 
 
-# Biomarkers & daily summary
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Biomarkers & daily summary
+# ═══════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def garmin_daily_summary(day: str) -> str:
@@ -460,10 +411,11 @@ def garmin_resting_heart_rate(end_date: str | None = None, days: int = 7) -> str
     return json.dumps(to_jsonable(result), indent=2)
 
 
-# Aggregate summaries (daily / weekly / bi-weekly / monthly)
+# ═══════════════════════════════════════════════════════════════════════════
+# 8. Aggregate summary report
+# ═══════════════════════════════════════════════════════════════════════════
 
 def _safe(fn, *args, **kwargs):
-    """Call fn and return result; on error return None."""
     try:
         return fn(*args, **kwargs)
     except Exception:
@@ -476,11 +428,6 @@ def _avg(values: list) -> float | None:
 
 
 def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
-    """
-    Collect biomarkers across an arbitrary date range and return a combined summary dict.
-    Pulls: daily wellness summaries, steps, stress, sleep, HRV, hydration,
-    intensity minutes, body battery, weight, and activities (including strength).
-    """
     from garth import (
         DailySteps, DailyStress, DailySleep, DailyHRV,
         DailyHydration, DailyIntensityMinutes,
@@ -489,7 +436,6 @@ def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
 
     num_days = (end_date - start_date).days + 1
 
-    # --- per-day wellness summaries (RHR, SpO2, respiration, calories) ---
     daily_summaries = []
     for i in range(num_days):
         d = start_date + timedelta(days=i)
@@ -515,7 +461,6 @@ def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
     bb_high_vals = [s.get("bodyBatteryHighestValue") for s in daily_summaries]
     bb_low_vals = [s.get("bodyBatteryLowestValue") for s in daily_summaries]
 
-    # --- garth Stats classes ---
     steps = _safe(DailySteps.list, end=end_date, period=num_days, client=client) or []
     stress = _safe(DailyStress.list, end=end_date, period=num_days, client=client) or []
     sleep = _safe(DailySleep.list, end=end_date, period=num_days, client=client) or []
@@ -532,7 +477,6 @@ def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
     moderate_mins = sum(i.moderate_value or 0 for i in intensity)
     vigorous_mins = sum(i.vigorous_value or 0 for i in intensity)
 
-    # activities (all types + strength breakdown) ---
     activities_raw = _safe(
         client.connectapi,
         "/activitylist-service/activities/search/activities",
@@ -549,7 +493,6 @@ def _collect_period_summary(client, start_date: date, end_date: date) -> dict:
                 if "strength" in a_type.lower():
                     strength_activities.append(a)
 
-    # count by type
     type_counts: dict[str, int] = {}
     for a in activities_in_range:
         t = (a.get("activityType", {}) or {}).get("typeKey", "unknown")
@@ -667,13 +610,17 @@ def garmin_summary_report(
     return json.dumps(summary, indent=2)
 
 
-# Delivery tools (email, etc.)
-from .delivery import register_delivery_tools
+# ═══════════════════════════════════════════════════════════════════════════
+# 9. Delivery tools (email)
+# ═══════════════════════════════════════════════════════════════════════════
 
+from .delivery import register_delivery_tools
 register_delivery_tools(mcp)
 
 
-# Raw Garmin Connect API
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. Raw Garmin Connect API
+# ═══════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) -> str:
@@ -698,28 +645,34 @@ def garmin_connect_api(path: str, method: str = "GET", body: str | None = None) 
     return json.dumps(to_jsonable(result), indent=2)
 
 
-
-# ---------------------------------------------------------------------------
-# Stats tools (statistical analysis on metric samples)
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
+# 11. Stats tool (consolidated)
+# ═══════════════════════════════════════════════════════════════════════════
 
 from .stats import register_stats_tools
 register_stats_tools(mcp)
 
 
-# ---------------------------------------------------------------------------
-# Visualization tools (matplotlib + LIDA)
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
+# 12. Visualization tool (consolidated matplotlib)
+# ═══════════════════════════════════════════════════════════════════════════
 
 from .visualizers import register_viz_tools
 register_viz_tools(mcp)
 
-from .lida_viz import register_lida_tools
-register_lida_tools(mcp)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 13. LIDA tools (opt-in: only registered when LLM_API_KEY is set)
+# ═══════════════════════════════════════════════════════════════════════════
+
+if os.environ.get("LLM_API_KEY", "").strip():
+    from .lida_viz import register_lida_tools
+    register_lida_tools(mcp)
 
 
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
 # Entrypoint
+# ═══════════════════════════════════════════════════════════════════════════
 
 def run():
     print("Starting Garmin MCP server...")
