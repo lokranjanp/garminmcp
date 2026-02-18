@@ -42,65 +42,42 @@ uv run garmin-mcp          # run server locally
 uv lock                    # refresh lock after changing pyproject.toml
 ```
 
-## Tools
+## Tools (17 base + 3 opt-in)
 
-| Tool | Description |
-|------|-------------|
-| **Utility** | |
-| `garmin_current_datetime` | Current date/time (local & UTC, ISO, weekday) |
-| **Auth** | |
-| `garmin_login` | Log in and save session to disk |
-| `garmin_resume_session` | Load saved session |
-| **User** | |
-| `garmin_user_profile` | Profile (display name, timezone, etc.) |
-| `garmin_user_settings` | Settings (units, preferences) |
-| **Stats** | |
-| `garmin_daily_steps` | Daily steps, distance, goal |
-| `garmin_weekly_steps` | Weekly steps |
-| `garmin_daily_sleep_stats` | Daily sleep score |
-| `garmin_daily_stress` / `garmin_weekly_stress` | Stress |
-| `garmin_daily_hydration` | Hydration (ml, goal) |
-| `garmin_daily_intensity_minutes` / `garmin_weekly_intensity_minutes` | Intensity minutes |
-| `garmin_daily_hrv` | Daily HRV summary |
-| **Data** | |
-| `garmin_sleep_data` / `garmin_sleep_data_list` | Sleep (single day or range) |
-| `garmin_hrv_data` / `garmin_hrv_data_list` | HRV (single day or range) |
-| `garmin_weight` / `garmin_weight_list` | Weight / body composition |
-| `garmin_body_battery_events` | Body Battery events |
-| `garmin_daily_body_battery_stress` | Body Battery + stress for a day |
-| **Activities** | |
-| `garmin_activities` | List activities (start, limit) |
-| `garmin_activity_details` | Full details for one activity by ID (running, strength, etc.) |
-| `garmin_activity_types` | List all activity types (type IDs and keys) |
-| **Biomarkers & summary** | |
-| `garmin_daily_summary` | One-day wellness: RHR, HR, stress, steps, SpO2, respiration, body battery, calories |
-| `garmin_resting_heart_rate` | Resting heart rate for a date range |
-| **Aggregate reports** | |
-| `garmin_summary_report` | Comprehensive biomarker + activity report (daily / weekly / biweekly / monthly) |
-| **Delivery tools** | |
-| `garmin_email_summary` | Generate summary report and send via SMTP email (HTML + plain-text) |
-| **Stats tools** | |
-| `garmin_stats_describe` | Descriptive stats: mean, median, mode, stdev, Q1/Q3, IQR, skewness, kurtosis |
-| `garmin_stats_percentiles` | Compute arbitrary percentiles (default: 5/10/25/50/75/90/95) |
-| `garmin_stats_correlation` | Pearson or Spearman correlation between two metric samples |
-| `garmin_stats_trend` | Linear trend: slope, R², direction, predicted next value |
-| `garmin_stats_compare` | Compare two samples: diff, % change, Cohen's d effect size |
-| `garmin_stats_moving_average` | Simple moving average with configurable window (default 7) |
-| `garmin_stats_outliers` | Outlier detection via IQR fences or z-score |
-| **Visualizers (matplotlib)** | |
-| `garmin_viz_line` | Line chart (e.g. daily steps over time) |
-| `garmin_viz_bar` | Bar chart (e.g. activity type counts) |
-| `garmin_viz_scatter` | Scatter plot with trend line (e.g. steps vs sleep) |
-| `garmin_viz_histogram` | Histogram / distribution (e.g. HRV spread) |
-| `garmin_viz_pie` | Pie chart (e.g. activity type %) |
-| `garmin_viz_heatmap` | Heatmap from a 2-D matrix (e.g. weekly stress grid) |
-| `garmin_viz_multi_line` | Overlay multiple series on one chart |
-| **Visualizers (LIDA / AI)** | |
-| `garmin_lida_visualize` | AI-driven chart generation -- auto-picks the best chart type |
-| `garmin_lida_goals` | Suggest N visualization goals for a dataset (EDA) |
-| `garmin_lida_explain` | Explain a visualization's code in natural language |
-| **Raw API** | |
-| `garmin_connect_api` | Call any Connect API path (GET/POST) |
+| # | Tool | Description |
+|---|------|-------------|
+| | **Utility** | |
+| 1 | `garmin_current_datetime` | Current date/time (local & UTC, ISO, weekday) |
+| | **Auth** | |
+| 2 | `garmin_login` | Log in and save session to disk |
+| 3 | `garmin_resume_session` | Load saved session |
+| | **User** | |
+| 4 | `garmin_user_profile` | Profile (display name, timezone, etc.) |
+| 5 | `garmin_user_settings` | Settings (units, preferences) |
+| | **Metrics (daily/weekly series)** | |
+| 6 | `garmin_metric` | Fetch daily or weekly stat series. `metric`: steps, sleep, stress, hydration, intensity_minutes, hrv. `period`: daily or weekly. `count`: number of periods. |
+| | **Detailed health data** | |
+| 7 | `garmin_data` | Fetch detailed data (single day or list). `data_type`: sleep, hrv, weight, body_battery_events, body_battery_stress. Use `day` for single-day or `end_date`+`days` for a range. |
+| | **Activities** | |
+| 8 | `garmin_activities` | List activities (start, limit) |
+| 9 | `garmin_activity_details` | Full details for one activity by ID |
+| 10 | `garmin_activity_types` | List all activity types (type IDs and keys) |
+| | **Biomarkers & summary** | |
+| 11 | `garmin_daily_summary` | One-day wellness: RHR, HR, stress, steps, SpO2, respiration, body battery, calories |
+| 12 | `garmin_resting_heart_rate` | Resting heart rate for a date range |
+| 13 | `garmin_summary_report` | Comprehensive biomarker + activity report (daily/weekly/biweekly/monthly) |
+| | **Delivery** | |
+| 14 | `garmin_email_summary` | Generate summary report and send via SMTP email (HTML + plain-text) |
+| | **Statistical analysis** | |
+| 15 | `garmin_stats` | Run a stats operation on numeric data. `operation`: describe, percentiles, correlation, trend, compare, moving_average, outliers. |
+| | **Visualization (matplotlib)** | |
+| 16 | `garmin_viz` | Render a chart. `chart_type`: line, bar, scatter, histogram, pie, heatmap, multi_line. Returns file path + base64 PNG. |
+| | **Raw API** | |
+| 17 | `garmin_connect_api` | Call any Connect API path (GET/POST) |
+| | **LIDA / AI visualization (opt-in, requires `LLM_API_KEY`)** | |
+| 18 | `garmin_lida_visualize` | AI-driven chart generation -- auto-picks the best chart type |
+| 19 | `garmin_lida_goals` | Suggest N visualization goals for a dataset (EDA) |
+| 20 | `garmin_lida_explain` | Explain a visualization's code in natural language |
 
 Dates: use `YYYY-MM-DD`; omit end date for "today" where supported.
 
@@ -116,13 +93,15 @@ Dates: use `YYYY-MM-DD`; omit end date for "today" where supported.
 | `SMTP_TO` | no | Default recipient(s), comma-separated |
 | `SMTP_USE_SSL` | no | `"true"` for implicit SSL (port 465); default uses STARTTLS |
 
-## LLM env vars (for LIDA visualization tools)
+## LLM env vars (for LIDA visualization tools -- opt-in)
+
+The 3 LIDA tools (`garmin_lida_*`) are **only registered when `LLM_API_KEY` is set**. If omitted, the server loads with 17 tools instead of 20, reducing context overhead for the AI client.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_PROVIDER` | `"openai"` | LLM provider for LIDA |
 | `LLM_API_BASE` | *(none)* | Custom endpoint -- set to `http://localhost:1234/v1` for LM Studio |
-| `LLM_API_KEY` | *(none)* | API key (use `"lm-studio"` for LM Studio) |
+| `LLM_API_KEY` | *(none)* | API key (use `"lm-studio"` for LM Studio). **Setting this enables LIDA tools.** |
 | `LLM_MODEL` | `"gpt-4o-mini"` | Model name (for LM Studio: whatever model is loaded) |
 
-Visualization output is saved to `output/viz/` and also returned as base64 PNG in the JSON response.
+Visualization output is saved to `output/viz/` (or `OUTPUT_DIR` env var) and also returned as base64 PNG in the JSON response.

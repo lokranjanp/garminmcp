@@ -2,15 +2,14 @@
 Visualizer tool -- single matplotlib-based charting endpoint for Garmin metric data.
 
 Accepts a chart_type and plottable data, renders the chart, saves it to disk,
-and returns both the file path and a base64-encoded PNG in the JSON response.
+and returns the image as a native MCP ImageContent block (rendered inline by
+Claude Desktop) alongside a JSON text block with the file path.
 
 Output directory: ``output/viz/`` or ``OUTPUT_DIR`` env var.
 """
 
 from __future__ import annotations
 
-import base64
-import io
 import json
 import os
 import time
@@ -21,24 +20,21 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from fastmcp.utilities.types import Image as MCPImage
+
 
 _OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join("output", "viz"))
 
 
-def _save_and_encode(fig: plt.Figure, tag: str) -> dict[str, str]:
+def _save_fig(fig: plt.Figure, tag: str) -> str:
+    """Save *fig* to PNG on disk and return the absolute file path."""
     os.makedirs(_OUTPUT_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     filename = f"{ts}_{tag}.png"
     filepath = os.path.join(_OUTPUT_DIR, filename)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
     fig.savefig(filepath, format="png", bbox_inches="tight", dpi=150)
     plt.close(fig)
-
-    buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode("ascii")
-    return {"file_path": os.path.abspath(filepath), "base64_png": b64}
+    return os.path.abspath(filepath)
 
 
 def _apply_style(ax: plt.Axes, title: str | None, x_label: str | None, y_label: str | None) -> None:
@@ -92,9 +88,6 @@ def _render_histogram(ax, x, y, **kw):
 
 def _render_pie(ax, x, y, **_kw):
     labels = x or [str(i) for i in range(len(y))]
-    ax.pie(labels[:len(y)], labels=labels[:len(y)], autopct="%1.1f%%", startangle=140, pctdistance=0.85)
-    # pie() uses labels param differently; pass values as first arg
-    ax.clear()
     ax.pie(y, labels=labels[:len(y)], autopct="%1.1f%%", startangle=140, pctdistance=0.85)
 
 
@@ -157,9 +150,10 @@ def register_viz_tools(mcp_instance) -> None:
         y_series: list[list[float]] | None = None,
         series_labels: list[str] | None = None,
         bins: int = 20,
-    ) -> str:
+    ) -> list:
         """
-        Render a chart and return file_path + base64 PNG.
+        Render a chart and return the image inline (displayed by Claude Desktop)
+        plus the saved file path.
 
         chart_type: "line", "bar", "scatter", "histogram", "pie", "heatmap", or "multi_line".
 
@@ -204,9 +198,11 @@ def register_viz_tools(mcp_instance) -> None:
                 _apply_style(ax, title, x_label, y_label)
             elif title:
                 ax.set_title(title, fontsize=13, fontweight="bold")
-            result = _save_and_encode(fig, ct)
+            filepath = _save_fig(fig, ct)
         except Exception as exc:
             return json.dumps({"error": str(exc)})
 
-        result["chart_type"] = ct
-        return json.dumps(result, indent=2)
+        return [
+            json.dumps({"chart_type": ct, "file_path": filepath}),
+            MCPImage(path=filepath),
+        ]

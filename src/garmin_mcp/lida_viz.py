@@ -17,23 +17,24 @@ from __future__ import annotations
 
 import base64
 import csv
-import io
 import json
 import os
 import tempfile
 import time
 from typing import Any
 
+from fastmcp.utilities.types import Image as MCPImage
+
 
 # ---------------------------------------------------------------------------
-# Output helpers (shared with visualizers.py conventions)
+# Output helpers
 # ---------------------------------------------------------------------------
 
 _OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join("output", "viz"))
 
 
-def _save_chart_b64(raster_b64: str, tag: str) -> dict[str, str]:
-    """Persist a base64 PNG to disk and return path + base64."""
+def _save_chart_b64(raster_b64: str, tag: str) -> str:
+    """Persist a base64 PNG to disk and return the absolute file path."""
     os.makedirs(_OUTPUT_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     filename = f"{ts}_{tag}.png"
@@ -43,7 +44,7 @@ def _save_chart_b64(raster_b64: str, tag: str) -> dict[str, str]:
     with open(filepath, "wb") as f:
         f.write(raw)
 
-    return {"file_path": os.path.abspath(filepath), "base64_png": raster_b64}
+    return os.path.abspath(filepath)
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +94,6 @@ def _data_to_csv_path(data: Any) -> str:
     """
     fd, path = tempfile.mkstemp(suffix=".csv", prefix="garmin_lida_")
 
-    # list of dicts  →  CSV
     if isinstance(data, list) and data and isinstance(data[0], dict):
         keys = list(data[0].keys())
         with os.fdopen(fd, "w", newline="") as f:
@@ -102,7 +102,6 @@ def _data_to_csv_path(data: Any) -> str:
             writer.writerows(data)
         return path
 
-    # dict of lists  →  CSV (column-oriented)
     if isinstance(data, dict):
         keys = list(data.keys())
         rows = zip(*(data[k] for k in keys))
@@ -112,7 +111,6 @@ def _data_to_csv_path(data: Any) -> str:
             writer.writerows(rows)
         return path
 
-    # 2-D list (first row = headers)
     if isinstance(data, list) and data and isinstance(data[0], (list, tuple)):
         with os.fdopen(fd, "w", newline="") as f:
             writer = csv.writer(f)
@@ -133,16 +131,15 @@ def _data_to_csv_path(data: Any) -> str:
 def register_lida_tools(mcp_instance) -> None:
     """Register LIDA-powered visualization tools on the MCP instance."""
 
-    # ── 1. Auto-visualize ──────────────────────────────────────────────
-
     @mcp_instance.tool()
     def garmin_lida_visualize(
         data: list[dict] | dict[str, list] | list[list],
         goal: str = "",
         library: str = "matplotlib",
-    ) -> str:
+    ) -> list:
         """
-        Generate a visualization using LIDA (AI-driven).
+        Generate a visualization using LIDA (AI-driven). Returns the chart
+        as a native MCP image (rendered inline by Claude Desktop) plus metadata.
 
         data: plottable dataset in one of these shapes:
           - list of dicts:  [{"date":"2026-02-01","steps":8000}, ...]
@@ -154,8 +151,6 @@ def register_lida_tools(mcp_instance) -> None:
 
         Requires LLM env vars: LLM_API_KEY (and optionally LLM_API_BASE,
         LLM_MODEL for LM Studio / local LLMs).
-
-        Returns: file_path, base64_png, generated code, and the goal used.
         """
         try:
             manager = _get_lida_manager()
@@ -204,13 +199,17 @@ def register_lida_tools(mcp_instance) -> None:
                 "code": chart.code,
             })
 
-        output = _save_chart_b64(raster_b64, "lida")
-        output["goal"] = goal
-        output["code"] = chart.code
-        output["library"] = library
-        return json.dumps(output, indent=2)
-
-    # ── 2. Suggest visualization goals ─────────────────────────────────
+        filepath = _save_chart_b64(raster_b64, "lida")
+        meta = {
+            "file_path": filepath,
+            "goal": goal,
+            "code": chart.code,
+            "library": library,
+        }
+        return [
+            json.dumps(meta, indent=2),
+            MCPImage(path=filepath),
+        ]
 
     @mcp_instance.tool()
     def garmin_lida_goals(
@@ -261,8 +260,6 @@ def register_lida_tools(mcp_instance) -> None:
 
         return json.dumps({"goals": result, "count": len(result)}, indent=2)
 
-    # ── 3. Explain a visualization ─────────────────────────────────────
-
     @mcp_instance.tool()
     def garmin_lida_explain(
         code: str,
@@ -308,7 +305,6 @@ def register_lida_tools(mcp_instance) -> None:
         if not explanation:
             return json.dumps({"explanation": "No explanation generated."})
 
-        # explanation is a list of dicts with 'section' and 'explanation' keys
         if isinstance(explanation, list):
             sections = []
             for item in explanation:
