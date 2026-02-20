@@ -208,7 +208,7 @@ def register_viz_tools(mcp_instance) -> None:
         except Exception as exc:
             return json.dumps({"error": str(exc)})
 
-        return [
+        return [            
+            ImageContent(type="image", data=b64, mime_type="image/png"),
             TextContent(type="text", text=json.dumps({"chart_type": ct, "file_path": filepath})),
-            ImageContent(type="image", data=b64, mimeType="image/png"),
         ]
